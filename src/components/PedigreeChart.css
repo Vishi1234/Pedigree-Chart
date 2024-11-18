@@ -1,0 +1,35 @@
+/* Canvas styling */
+svg {
+    background-color: #f9f9f9;
+    border-radius: 8px;
+    padding: 10px;
+  }
+  
+  /* Link styling */
+  .link {
+    stroke: #aaa;
+    stroke-width: 2px;
+  }
+  
+  /* Node styling */
+  .node rect,
+  .node circle {
+    stroke: #555;
+    stroke-width: 2px;
+    cursor: pointer;
+  }
+  
+  .node rect {
+    fill: #1f77b4; /* Male: Blue */
+  }
+  
+  .node circle {
+    fill: #ff7f0e; /* Female: Orange */
+  }
+  
+  .node text {
+    font-family: 'Arial', sans-serif;
+    font-size: 12px;
+    fill: #333;
+  }
+  
