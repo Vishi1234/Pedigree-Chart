@@ -5,37 +5,79 @@ export default function PedigreeChart({ formInfo }) {
   const diagramRef = useRef(null);
 
   useEffect(() => {
+    // Initialize the diagram only once
     if (diagramRef.current && !diagramRef.current.diagram) {
-      const diagram = new go.Diagram(diagramRef.current);
+      const $ = go.GraphObject.make;
+      const diagram = $(go.Diagram, diagramRef.current, {
+        layout: $(go.TreeLayout, {
+          arrangement: go.TreeLayout.ArrangementHorizontal,
+          angle: 90,
+          layerSpacing: 30,
+          nodeSpacing: 10,
+        }),
+      });
 
-      // Node Template (circle for female, square for male)
-      diagram.nodeTemplate = new go.Node("Auto").add(
-        new go.Shape()
-          .bind("figure", "gender", (gender) => (gender === "male" ? "Square" : "Circle"))
-          .bind("fill", "gender", (gender) => (gender === "male" ? "lightblue" : "lightpink"))
+      // Node Template
+      diagram.nodeTemplate = $(go.Node, "Auto", 
+        $(go.Shape, {
+          fill: "white",
+          strokeWidth: 1,
+          desiredSize: new go.Size(60, 60),
+        }, 
+        new go.Binding("figure", "gender", (gender) => gender === "male" ? "Square" : "Circle"),
+        new go.Binding("fill", "gender", (gender) => gender === "male" ? "lightblue" : "lightpink")
+        ),
+        $(go.TextBlock, {
+          margin: 5,
+          textAlign: "center",
+          verticalAlignment: go.Spot.Center,
+          font: "bold 10px sans-serif",
+          wrap: go.TextBlock.WrapFit,
+          maxSize: new go.Size(50, NaN),
+        }, new go.Binding("text", "key"))
       );
 
-      // Link Template (for parent-child relationships)
-      diagram.linkTemplate = new go.Link({
-        routing: go.Link.Orthogonal,
-        corner: 5,
-      }).add(new go.Shape());
+      // Link Template
+      diagram.linkTemplate = $(go.Link, { routing: go.Link.Orthogonal, corner: 5 }, $(go.Shape));
 
-      // Relationship Link Template (single straight horizontal line)
-      const relationshipLinkTemplate = new go.Link({
-        routing: go.Link.Normal, // Ensures a straight line
-        selectable: false,
-        isTreeLink: false, // Not part of the tree structure
-        layerName: "Background", // Doesn't interfere with other elements
-      }).add(new go.Shape({ stroke: "black", strokeWidth: 2 })); // Single horizontal line
-      diagram.linkTemplateMap.add("Relationship", relationshipLinkTemplate);
+      // Relationship Link Template
+      diagram.linkTemplateMap.add(
+        "Relationship",
+        $(go.Link, {
+          routing: go.Link.Normal,
+          selectable: false,
+          isTreeLink: false,
+          isLayoutPositioned: false,
+          layerName: "Background",
+        }, $(go.Shape, { stroke: "black", strokeWidth: 2 }))
+      );
 
-      // Node Data
+      // Store the diagram instance in the ref
+      diagramRef.current.diagram = diagram;
+    }
+
+    // Update the model whenever formInfo changes
+    if (diagramRef.current.diagram) {
+      const diagram = diagramRef.current.diagram;
+
+      // Define nodes dynamically based on formInfo
       const nodeDataArray = [
-        { key: "Maternal Grandfather", gender: "male", loc: "0 0" }, // Explicit position
-        { key: "Maternal Grandmother", gender: "female", loc: "150 0" }, // Explicit position
+        { key: "Maternal Grandfather", gender: "male" },
+        { key: "Maternal Grandmother", gender: "female" },
         { key: "Paternal Grandfather", gender: "male" },
         { key: "Paternal Grandmother", gender: "female" },
+        // Add Paternal Uncles and Aunts
+        ...Array.from({ length: formInfo.paternalUncles }, (_, i) => ({
+          key: `Paternal Uncle ${i + 1}`,
+          parent: "Paternal Grandfather",
+          gender: "male",
+        })),
+        ...Array.from({ length: formInfo.paternalAunts }, (_, i) => ({
+          key: `Paternal Aunt ${i + 1}`,
+          parent: "Paternal Grandfather",
+          gender: "female",
+        })),
+        { key: "Father", parent: "Paternal Grandfather", gender: "male" },
         ...Array.from({ length: formInfo.maternalUncles }, (_, i) => ({
           key: `Maternal Uncle ${i + 1}`,
           parent: "Maternal Grandfather",
@@ -47,17 +89,6 @@ export default function PedigreeChart({ formInfo }) {
           gender: "female",
         })),
         { key: "Mother", parent: "Maternal Grandfather", gender: "female" },
-        { key: "Father", parent: "Paternal Grandfather", gender: "male" },
-        ...Array.from({ length: formInfo.paternalUncles }, (_, i) => ({
-          key: `Paternal Uncle ${i + 1}`,
-          parent: "Paternal Grandfather",
-          gender: "male",
-        })),
-        ...Array.from({ length: formInfo.paternalAunts }, (_, i) => ({
-          key: `Paternal Aunt ${i + 1}`,
-          parent: "Paternal Grandfather",
-          gender: "female",
-        })),
         ...Array.from({ length: formInfo.brothers }, (_, i) => ({
           key: `Brother ${i + 1}`,
           parent: "Mother",
@@ -81,47 +112,102 @@ export default function PedigreeChart({ formInfo }) {
         })),
       ];
 
-      // Link Data (relationship link + parent-child links)
+      // Link Data (parent-child relationships and custom relationships)
       const linkDataArray = [
-        { from: "Maternal Grandfather", to: "Maternal Grandmother", category: "Relationship" }, // Single horizontal line
+        { from: "Maternal Grandfather", to: "Maternal Grandmother", category: "Relationship" },
+        { from: "Paternal Grandfather", to: "Paternal Grandmother", category: "Relationship" },
+        { from: "Paternal Grandfather", to: "Father" },
+        { from: "Maternal Grandfather", to: "Mother" },
+        // Add link from Maternal Grandmother to her children (Mother, Maternal Aunt, Maternal Uncle)
+        { from: "Maternal Grandmother", to: "Mother", category: "Relationship" },
+        ...Array.from({ length: formInfo.maternalUncles }, (_, i) => ({
+          from: "Maternal Grandmother",
+          to: `Maternal Uncle ${i + 1}`,
+          category: "Relationship",
+        })),
+        ...Array.from({ length: formInfo.maternalAunts }, (_, i) => ({
+          from: "Maternal Grandmother",
+          to: `Maternal Aunt ${i + 1}`,
+          category: "Relationship",
+        })),
+        // Add relationship between Mother and Father
+        { from: "Mother", to: "Father", category: "Relationship" },
         ...nodeDataArray
-          .filter((node) => node.parent)
-          .map((node) => ({ from: node.parent, to: node.key })), // Parent-child links
+          .filter((node) => node.parent && 
+            // Exclude duplicate links for Maternal Grandfather and Mother
+            (node.parent !== "Maternal Grandfather" || node.key !== "Mother") &&
+            // Exclude duplicate links for Paternal Grandfather and Father
+            (node.parent !== "Paternal Grandfather" || node.key !== "Father")
+          )
+          .map((node) => ({ from: node.parent, to: node.key })),
       ];
 
       // Set the model
       diagram.model = new go.GraphLinksModel(nodeDataArray, linkDataArray);
 
-      // Tree Layout for non-relationship nodes
-      diagram.layout = new go.TreeLayout({
-        arrangement: go.TreeLayout.ArrangementHorizontal,
-        angle: 90,
-        layerSpacing: 30,
-        nodeSpacing: 8,
-      });
-
-      // Explicitly position Maternal Grandfather and Grandmother
+      // Position the grandparents explicitly after layout
       diagram.addDiagramListener("InitialLayoutCompleted", () => {
         const maternalGrandfather = diagram.findNodeForKey("Maternal Grandfather");
         const maternalGrandmother = diagram.findNodeForKey("Maternal Grandmother");
+        const paternalGrandfather = diagram.findNodeForKey("Paternal Grandfather");
+        const paternalGrandmother = diagram.findNodeForKey("Paternal Grandmother");
+        
+        // Positioning grandparents
         if (maternalGrandfather && maternalGrandmother) {
-          maternalGrandfather.position = new go.Point(0, 0); // Set explicit position
-          maternalGrandmother.position = new go.Point(150, 0); // Horizontal alignment
+          maternalGrandfather.position = new go.Point(0, 0);
+          maternalGrandmother.position = new go.Point(100, 0);
+        }
+
+        if (paternalGrandfather && paternalGrandmother) {
+          paternalGrandfather.position = new go.Point(400, 0);
+          paternalGrandmother.position = new go.Point(500, 0);
+        }
+
+        // Swap positions of Mother and Maternal Aunt 1
+        const motherNode = diagram.findNodeForKey("Mother");
+        const maternalAunt1Node = diagram.findNodeForKey("Maternal Aunt 1");
+        if (motherNode && maternalAunt1Node) {
+          // Get the current positions of Mother and Maternal Aunt 1
+          const motherPos = motherNode.location;
+          const maternalAunt1Pos = maternalAunt1Node.location;
+
+          // Swap the positions
+          motherNode.position = maternalAunt1Pos;
+          maternalAunt1Node.position = motherPos;
+        }
+
+        // Adjust positions of the paternal uncles and aunts
+        const paternalFather = diagram.findNodeForKey("Father");
+        if (paternalFather) {
+          let xPosition = paternalFather.location.x + 100; // Adjust accordingly
+          for (let i = 1; i <= formInfo.paternalUncles; i++) {
+            const paternalUncle = diagram.findNodeForKey(`Paternal Uncle ${i}`);
+            if (paternalUncle) {
+              paternalUncle.position = new go.Point(xPosition, paternalFather.location.y);
+              xPosition += 100; // Adjust for next uncle
+            }
+          }
+          for (let i = 1; i <= formInfo.paternalAunts; i++) {
+            const paternalAunt = diagram.findNodeForKey(`Paternal Aunt ${i}`);
+            if (paternalAunt) {
+              paternalAunt.position = new go.Point(xPosition, paternalFather.location.y);
+              xPosition += 100; // Adjust for next aunt
+            }
+          }
         }
       });
-
-      diagramRef.current.diagram = diagram;
-    } else {
-      const diagram = diagramRef.current.diagram;
-      diagram.model = new go.GraphLinksModel([]);
     }
 
     return () => {
-      if (diagramRef.current && diagramRef.current.diagram) {
+      // Clean up the diagram on component unmount
+      if (diagramRef.current.diagram) {
         diagramRef.current.diagram.clear();
       }
     };
   }, [formInfo]);
+
+ 
+
 
   return <div ref={diagramRef} style={{ width: "100%", height: "500px" }}></div>;
 }
